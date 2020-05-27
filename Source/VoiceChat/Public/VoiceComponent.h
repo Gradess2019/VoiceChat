@@ -9,6 +9,7 @@
 class IVoiceCapture;
 class IVoiceDecoder;
 class IVoiceEncoder;
+class UVoipListenerSynthComponent;
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class VOICECHAT_API UVoiceComponent : public UActorComponent
@@ -18,17 +19,23 @@ class VOICECHAT_API UVoiceComponent : public UActorComponent
 public:	
 	UVoiceComponent();
 
+	UFUNCTION(BlueprintCallable, Category = "Voice")
+	virtual void Start();
+
+	UFUNCTION(BlueprintCallable, Category = "Voice")
+	virtual void Stop();
+
 protected:
+
 	virtual void BeginPlay() override;
 
-	UPROPERTY()
-	IVoiceCapture* VoiceCapture;
-	
-	UPROPERTY()
-	IVoiceEncoder* Encoder;
+	TSharedPtr<IVoiceCapture> VoiceCapture;
+	TSharedPtr<IVoiceEncoder> Encoder;
+	TSharedPtr<IVoiceDecoder> Decoder;
 
-	UPROPERTY()
-	IVoiceDecoder* Decoder;
+	TArray<uint8> DecompressedBuffer;
+
+	UVoipListenerSynthComponent* SynthComponent;
 
 public:	
 

@@ -42,8 +42,10 @@ public class VoiceChat : ModuleRules
 				"Voice",
                 "OnlineSubsystem",
                 "OnlineSubsystemNull",
-                "OnlineSubsystemUtils"
-            }
+                "OnlineSubsystemUtils",
+				"AudioMixer",
+				"SignalProcessing"
+			}
 			);
 		
 		
