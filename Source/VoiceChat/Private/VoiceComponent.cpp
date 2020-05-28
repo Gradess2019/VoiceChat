@@ -10,76 +10,115 @@
 UVoiceComponent::UVoiceComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
+	
 }
 
 void UVoiceComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	VoiceCapture = FVoiceModule::Get().CreateVoiceCapture();
-	Encoder = FVoiceModule::Get().CreateVoiceEncoder();
-	Decoder = FVoiceModule::Get().CreateVoiceDecoder();
+	RootComponent = GetOwner()->GetRootComponent();
 
-	SynthComponent = CreateVoiceSynthComponent(UVOIPStatics::GetVoiceSampleRate());
-	SynthComponent->SetVolumeMultiplier(3.f);
-	SynthComponent->OpenPacketStream(128000, UVOIPStatics::GetNumBufferedPackets(), UVOIPStatics::GetBufferingDelay());
+	VoiceCapture = FVoiceModule::Get().CreateVoiceCapture();
+
+	AudioComponent = NewObject<UAudioComponent>();
+	AudioComponent->AttachTo(RootComponent);
+	AudioComponent->bAutoActivate = true;
+	AudioComponent->Activate(true);
+	AudioComponent->bAlwaysPlay = true;
+	AudioComponent->PitchMultiplier = 0.85f;
+	AudioComponent->VolumeMultiplier = 5.f;
+
+	SoundWave = NewObject<USoundWaveProcedural>();
+	SoundWave->SetSampleRate(22050);
+	SoundWave->NumChannels = 1;
+	SoundWave->
+	SoundWave->Duration = INDEFINITELY_LOOPING_DURATION;
+	SoundWave->SoundGroup = SOUNDGROUP_Voice;
+	SoundWave->bLooping = false;
+	SoundWave->bProcedural = true;
+	SoundWave->Pitch = 0.85f;
+	SoundWave->Volume = 5.f;
+
+	GetOwner()->GetWorldTimerManager().SetTimer(
+		PlayVoiceCaptureTimer,
+		this,
+		&UVoiceComponent::PlayVoiceCapture,
+		0.1f,
+		true
+	);
+
 }
 
 void UVoiceComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-	
-	//if (!VoiceCapture->IsCapturing()) { return; }
 
-	//DecompressedBuffer.Empty();
-	
-	uint32 NewVoiceDataBytes = 0;
-	uint32 ByteWritten = 0;
-	uint64 NewSampleCount = 0;
-	
-	auto State = VoiceCapture->GetCaptureState(NewVoiceDataBytes);
-	DecompressedBuffer.AddUninitialized(NewVoiceDataBytes);
-
-	auto AvailableSamples = VoiceCapture->GetMicrophoneAudio(4096 * 2, 1.f)->GetNumSamplesAvailable();
-	VoiceCapture->GetVoiceData(DecompressedBuffer.GetData(), NewVoiceDataBytes, ByteWritten, NewSampleCount);
-
-	if (NewSampleCount != 0)
-	{
-		UE_LOG(LogTemp,
-			Warning,
-			TEXT("NewBytes = %d, WrittenBytes = %d; Samples = %d, AvailableSamples = %d"),
-			NewVoiceDataBytes,
-			ByteWritten,
-			NewSampleCount,
-			AvailableSamples
-		);
-		SynthComponent->ResetBuffer(NewSampleCount, UVOIPStatics::GetBufferingDelay());
-		SynthComponent->Start();
-		SynthComponent->SubmitPacket(
-			(float*)DecompressedBuffer.GetData(),
-			UVOIPStatics::GetMaxUncompressedVoiceDataSizePerChannel(),
-			NewSampleCount,
-			EVoipStreamDataFormat::Int16
-		);
-	}
-
-	if (SynthComponent->IsIdling())
-	{
-		SynthComponent->Stop();
-	}
+	VoiceCaptureTick();
 }
 
 void UVoiceComponent::Start()
 {
-	if (VoiceCapture->IsCapturing()) { return; }
-
 	VoiceCapture->Start();
 }
 
 void UVoiceComponent::Stop()
 {
-	if (!VoiceCapture->IsCapturing()) { return; }
-
 	VoiceCapture->Stop();
 }
 
+void UVoiceComponent::VoiceCaptureTick_Implementation()
+{
+	if (!VoiceCapture.IsValid()) { return; }
+
+	uint32 AvailableBytes = 0;
+	EVoiceCaptureState::Type CaptureState = VoiceCapture->GetCaptureState(AvailableBytes);
+
+	VoiceCaptureBuffer.Reset();
+	PlayVoiceCaptureFlag = false;
+
+	if (CaptureState == EVoiceCaptureState::Ok && AvailableBytes > 0)
+	{
+		short VoiceCaptureSample = 0;
+		uint32 VoiceCaptureReadBytes = 0;
+		float VoiceCaptureTotalSquared = 0;
+
+		VoiceCaptureBuffer.SetNumUninitialized(AvailableBytes);
+		VoiceCapture->GetVoiceData(
+			VoiceCaptureBuffer.GetData(),
+			AvailableBytes,
+			VoiceCaptureReadBytes
+		);
+
+		for (uint32 i = 0; i < (VoiceCaptureReadBytes / 2); i++)
+		{
+			VoiceCaptureSample = (VoiceCaptureBuffer[i * 2 + 1] << 8) | VoiceCaptureBuffer[i * 2];
+			VoiceCaptureTotalSquared += ((float)VoiceCaptureSample * (float)VoiceCaptureSample);
+		}
+
+		float VoiceCaptureMeanSquare = (2 * (VoiceCaptureTotalSquared / VoiceCaptureBuffer.Num()));
+		float VoiceCaptureRms = FMath::Sqrt(VoiceCaptureMeanSquare);
+		float VoiceCaptureFinalVolume = ((VoiceCaptureRms / 32768.0) * 200.f);
+
+		VoiceCaptureVolume = VoiceCaptureFinalVolume;
+
+		SoundWave->QueueAudio(VoiceCaptureBuffer.GetData(), VoiceCaptureReadBytes);
+		AudioComponent->SetSound(SoundWave);
+
+		PlayVoiceCaptureFlag = true;
+	}
+
+}
+
+void UVoiceComponent::PlayVoiceCapture_Implementation()
+{
+	if (!PlayVoiceCaptureFlag)
+	{
+		AudioComponent->FadeOut(0.3f, 0.f);
+		return;
+	}
+
+	if (AudioComponent->IsPlaying()) { return; }
+
+	AudioComponent->Play();
+}

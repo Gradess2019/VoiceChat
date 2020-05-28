@@ -7,9 +7,7 @@
 #include "VoiceComponent.generated.h"
 
 class IVoiceCapture;
-class IVoiceDecoder;
-class IVoiceEncoder;
-class UVoipListenerSynthComponent;
+class USoundWaveProcedural;
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class VOICECHAT_API UVoiceComponent : public UActorComponent
@@ -30,13 +28,41 @@ protected:
 	virtual void BeginPlay() override;
 
 	TSharedPtr<IVoiceCapture> VoiceCapture;
-	TSharedPtr<IVoiceEncoder> Encoder;
-	TSharedPtr<IVoiceDecoder> Decoder;
 
-	TArray<uint8> DecompressedBuffer;
+	UPROPERTY(BlueprintReadWrite, Category = "Voice")
+	TArray<uint8> VoiceCaptureBuffer;
 
-	UVoipListenerSynthComponent* SynthComponent;
+	UPROPERTY(BlueprintReadWrite, Category = "Voice")
+	bool PlayVoiceCaptureFlag;
 
+	UPROPERTY(BlueprintReadWrite, Category = "Voice")
+	FTimerHandle VoiceCaptureTickTimer;
+	
+	UPROPERTY(BlueprintReadWrite, Category = "Voice")
+	FTimerHandle PlayVoiceCaptureTimer;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Voice")
+	USoundWaveProcedural* SoundWave;
+	
+	UPROPERTY(BlueprintReadWrite, Category = "Voice")
+	UAudioComponent* AudioComponent;
+
+	UPROPERTY()
+	USceneComponent* RootComponent;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Voice")
+	float VoiceCaptureVolume;
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Voice")
+	void VoiceCaptureTick();
+
+	virtual void VoiceCaptureTick_Implementation();
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Voice")
+	void PlayVoiceCapture();
+
+	virtual void PlayVoiceCapture_Implementation();
+	
 public:	
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
