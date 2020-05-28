@@ -21,33 +21,25 @@ void UVoiceComponent::BeginPlay()
 
 	VoiceCapture = FVoiceModule::Get().CreateVoiceCapture();
 
-	AudioComponent = NewObject<UAudioComponent>();
-	AudioComponent->AttachTo(RootComponent);
-	AudioComponent->bAutoActivate = true;
-	AudioComponent->Activate(true);
-	AudioComponent->bAlwaysPlay = true;
-	AudioComponent->PitchMultiplier = 0.85f;
-	AudioComponent->VolumeMultiplier = 5.f;
+	AudioComponent = Cast<UAudioComponent>(GetOwner()->GetComponentByClass(UAudioComponent::StaticClass()));
 
 	SoundWave = NewObject<USoundWaveProcedural>();
-	SoundWave->SetSampleRate(22050);
+	SoundWave->SetSampleRate(24000);
 	SoundWave->NumChannels = 1;
-	SoundWave->
 	SoundWave->Duration = INDEFINITELY_LOOPING_DURATION;
 	SoundWave->SoundGroup = SOUNDGROUP_Voice;
 	SoundWave->bLooping = false;
 	SoundWave->bProcedural = true;
 	SoundWave->Pitch = 0.85f;
-	SoundWave->Volume = 5.f;
+	SoundWave->Volume = 2.f;
 
 	GetOwner()->GetWorldTimerManager().SetTimer(
 		PlayVoiceCaptureTimer,
 		this,
 		&UVoiceComponent::PlayVoiceCapture,
-		0.1f,
+		0.2f,
 		true
 	);
-
 }
 
 void UVoiceComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -75,7 +67,6 @@ void UVoiceComponent::VoiceCaptureTick_Implementation()
 	EVoiceCaptureState::Type CaptureState = VoiceCapture->GetCaptureState(AvailableBytes);
 
 	VoiceCaptureBuffer.Reset();
-	PlayVoiceCaptureFlag = false;
 
 	if (CaptureState == EVoiceCaptureState::Ok && AvailableBytes > 0)
 	{
@@ -103,21 +94,12 @@ void UVoiceComponent::VoiceCaptureTick_Implementation()
 		VoiceCaptureVolume = VoiceCaptureFinalVolume;
 
 		SoundWave->QueueAudio(VoiceCaptureBuffer.GetData(), VoiceCaptureReadBytes);
-		AudioComponent->SetSound(SoundWave);
 
-		PlayVoiceCaptureFlag = true;
 	}
-
 }
 
 void UVoiceComponent::PlayVoiceCapture_Implementation()
 {
-	if (!PlayVoiceCaptureFlag)
-	{
-		AudioComponent->FadeOut(0.3f, 0.f);
-		return;
-	}
-
 	if (AudioComponent->IsPlaying()) { return; }
 
 	AudioComponent->Play();

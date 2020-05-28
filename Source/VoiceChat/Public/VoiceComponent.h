@@ -8,6 +8,7 @@
 
 class IVoiceCapture;
 class USoundWaveProcedural;
+class USoundWave;
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class VOICECHAT_API UVoiceComponent : public UActorComponent
@@ -43,6 +44,9 @@ protected:
 
 	UPROPERTY(BlueprintReadWrite, Category = "Voice")
 	USoundWaveProcedural* SoundWave;
+
+	UPROPERTY(BlueprintReadWrite, EditDefaultsOnly, Category = "Voice")
+	USoundWave* TestSoundWave;
 	
 	UPROPERTY(BlueprintReadWrite, Category = "Voice")
 	UAudioComponent* AudioComponent;
