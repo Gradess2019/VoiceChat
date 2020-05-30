@@ -7,8 +7,12 @@
 #include "VoiceComponent.generated.h"
 
 class IVoiceCapture;
+class IVoiceEncoder;
+class IVoiceDecoder;
 class USoundWaveProcedural;
 class USoundWave;
+class APawn;
+class UAudioComponent;
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class VOICECHAT_API UVoiceComponent : public UActorComponent
@@ -29,9 +33,17 @@ protected:
 	virtual void BeginPlay() override;
 
 	TSharedPtr<IVoiceCapture> VoiceCapture;
+	TSharedPtr<IVoiceEncoder> VoiceEncoder;
+	TSharedPtr<IVoiceDecoder> VoiceDecoder;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Voice")
 	TArray<uint8> VoiceCaptureBuffer;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Voice")
+	TArray<uint8> TempBuffer;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Voice")
+	TArray<uint8> ReplicatedBuffer;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Voice")
 	bool PlayVoiceCaptureFlag;
@@ -45,17 +57,14 @@ protected:
 	UPROPERTY(BlueprintReadWrite, Category = "Voice")
 	USoundWaveProcedural* SoundWave;
 
-	UPROPERTY(BlueprintReadWrite, EditDefaultsOnly, Category = "Voice")
-	USoundWave* TestSoundWave;
-	
 	UPROPERTY(BlueprintReadWrite, Category = "Voice")
 	UAudioComponent* AudioComponent;
 
-	UPROPERTY()
-	USceneComponent* RootComponent;
-
 	UPROPERTY(BlueprintReadOnly, Category = "Voice")
 	float VoiceCaptureVolume;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Voice")
+	APawn* Owner;
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Voice")
 	void VoiceCaptureTick();
@@ -66,7 +75,15 @@ protected:
 	void PlayVoiceCapture();
 
 	virtual void PlayVoiceCapture_Implementation();
-	
+
+	// Voice buffer replication
+
+	UFUNCTION(Server, WithValidation, Unreliable)
+	void SetBuffer(const TArray<uint8>& InVoiceBuffer);
+
+	UFUNCTION(NetMulticast, Unreliable)
+	void SetBuffer_Multicast(const TArray<uint8>& InVoiceBuffer);
+
 public:	
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
