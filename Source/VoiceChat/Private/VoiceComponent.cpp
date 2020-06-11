@@ -13,6 +13,7 @@ UVoiceComponent::UVoiceComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 	SetIsReplicatedByDefault(true);
+	Rate = 0.3f;
 }
 
 void UVoiceComponent::BeginPlay()
@@ -43,31 +44,34 @@ void UVoiceComponent::BeginPlay()
 
 	AudioComponent->SetSound(SoundWave);
 	AudioComponent->Play();
-
-	Owner->GetWorldTimerManager().SetTimer(
-		PlayVoiceCaptureTimer,
-		this,
-		&UVoiceComponent::PlayVoiceCapture,
-		0.2f,
-		true
-	);
 }
 
 void UVoiceComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	VoiceCaptureTick();
+	bCapturing = VoiceCapture->IsCapturing();
 }
 
 void UVoiceComponent::Start()
 {
 	VoiceCapture->Start();
+	
+	Owner->GetWorldTimerManager().SetTimer(
+		PlayVoiceCaptureTimer,
+		this,
+		&UVoiceComponent::PlayVoiceCapture,
+		Rate,
+		true
+	);
 }
 
 void UVoiceComponent::Stop()
 {
 	VoiceCapture->Stop();
+	if (!PlayVoiceCaptureTimer.IsValid()) { return; }
+	
+	PlayVoiceCaptureTimer.Invalidate();
 }
 
 void UVoiceComponent::VoiceCaptureTick_Implementation()
@@ -98,24 +102,32 @@ void UVoiceComponent::VoiceCaptureTick_Implementation()
 			VoiceCaptureTotalSquared += float(VoiceCaptureSample) * float(VoiceCaptureSample);
 		}
 
-		float VoiceCaptureMeanSquare = (2 * (VoiceCaptureTotalSquared / VoiceCaptureBuffer.Num()));
+		float VoiceCaptureMeanSquare = 2 * (VoiceCaptureTotalSquared / VoiceCaptureBuffer.Num());
 		float VoiceCaptureRms = FMath::Sqrt(VoiceCaptureMeanSquare);
-		float VoiceCaptureFinalVolume = ((VoiceCaptureRms / 32768.0) * 200.f);
+		float VoiceCaptureFinalVolume = VoiceCaptureRms / 32768.0 * 200.f;
 
 		VoiceCaptureVolume = VoiceCaptureFinalVolume;
 
-		auto TempCompressedSize = UVOIPStatics::GetMaxCompressedVoiceDataSize();
-		TempBuffer.SetNumUninitialized(TempCompressedSize);
-
-		VoiceEncoder->Encode(VoiceCaptureBuffer.GetData(), VoiceCaptureReadBytes, TempBuffer.GetData(), TempCompressedSize);
-
-		TempBuffer.SetNum(TempCompressedSize);
-		SetBuffer(TempBuffer);
+		auto TempEncodeBuffer = TArray<uint8>();
+		auto CompressedSize = UVOIPStatics::GetMaxCompressedVoiceDataSize();
+		TempEncodeBuffer.SetNumUninitialized(CompressedSize);
+		VoiceEncoder->Encode(VoiceCaptureBuffer.GetData(), VoiceCaptureReadBytes, TempEncodeBuffer.GetData(), CompressedSize);
+		TempEncodeBuffer.SetNum(CompressedSize);
+		ReplicatedBuffer.Append(TempEncodeBuffer);
 	}
 }
 
 void UVoiceComponent::PlayVoiceCapture_Implementation()
 {
+	VoiceCaptureTick();
+	
+	if (ReplicatedBuffer.Num() > 0)
+	{
+		SetBuffer(ReplicatedBuffer);
+		
+		ReplicatedBuffer.Reset();
+	}
+	
 	if (AudioComponent->IsPlaying()) { return; }
 
 	AudioComponent->Play();
@@ -136,9 +148,9 @@ void UVoiceComponent::SetBuffer_Multicast_Implementation(const TArray<uint8>& In
 	if (Owner == nullptr || Owner->IsLocallyControlled()) { return; }
 
 	auto TempRawSize = UVOIPStatics::GetMaxUncompressedVoiceDataSizePerChannel();
-	TempBuffer.SetNumUninitialized(TempRawSize);
-	VoiceDecoder->Decode(InVoiceBuffer.GetData(), InVoiceBuffer.Num(), TempBuffer.GetData(), TempRawSize);
-
-	SoundWave->QueueAudio(TempBuffer.GetData(), TempRawSize);
+	auto TempDecodeBuffer = TArray<uint8>();
+	TempDecodeBuffer.SetNumUninitialized(TempRawSize);
+	VoiceDecoder->Decode(InVoiceBuffer.GetData(), InVoiceBuffer.Num(), TempDecodeBuffer.GetData(), TempRawSize);
+	SoundWave->QueueAudio(TempDecodeBuffer.GetData(), TempRawSize);
 }
 

@@ -40,10 +40,10 @@ protected:
 	TArray<uint8> VoiceCaptureBuffer;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Voice")
-	TArray<uint8> TempBuffer;
+	TArray<uint8> ReplicatedBuffer;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Voice")
-	TArray<uint8> ReplicatedBuffer;
+	TArray<uint8> AdditionalReplicatedBuffer;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Voice")
 	bool PlayVoiceCaptureFlag;
@@ -65,6 +65,12 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Voice")
 	APawn* Owner;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Voice")
+	float Rate;
+	
+	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category = "Voice")
+	bool bCapturing;
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Voice")
 	void VoiceCaptureTick();
