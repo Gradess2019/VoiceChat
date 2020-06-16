@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Interfaces/IPv4/IPv4Endpoint.h"
 #include "VoiceComponent.generated.h"
 
 class IVoiceCapture;
@@ -13,13 +14,18 @@ class USoundWaveProcedural;
 class USoundWave;
 class APawn;
 class UAudioComponent;
+class FSocket;
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class VOICECHAT_API UVoiceComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
-public:	
+public:
+
+	UFUNCTION(BlueprintCallable, Category = "Voice")
+	void StartTcpServer();
+	
 	UVoiceComponent();
 
 	UFUNCTION(BlueprintCallable, Category = "Voice")
@@ -90,6 +96,13 @@ protected:
 	UFUNCTION(NetMulticast, Unreliable)
 	void SetBuffer_Multicast(const TArray<uint8>& InVoiceBuffer);
 
+	//TCP
+
+	bool ConnectionAccept(FSocket* ClientSocket, const FIPv4Endpoint& ClientEndpoint);
+
+	UFUNCTION(BlueprintCallable, Category = "Voice")
+	void Send(UPARAM(DisplayName = "Data") const TArray<uint8>& InData);
+	
 public:	
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
