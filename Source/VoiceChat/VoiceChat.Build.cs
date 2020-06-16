@@ -28,7 +28,10 @@ public class VoiceChat : ModuleRules
 				"Core",
 				// ... add other public dependencies that you statically link with here ...
 				"Networking",
-				"Sockets"
+				"Sockets",
+				"HTTP",
+				"Json", 
+				"JsonUtilities"
 			}
 			);
 			

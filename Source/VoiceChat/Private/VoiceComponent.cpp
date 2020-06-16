@@ -11,23 +11,20 @@
 #include "Common/TcpListener.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetArrayLibrary.h"
-
+#include "VoiceServer.h"
+#include "Engine/NetConnection.h"
 
 UVoiceComponent::UVoiceComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 	SetIsReplicatedByDefault(true);
+	Address = FString("127.0.0.1:7778");
 	Rate = 0.3f;
 
+	auto SocketDescription = FString("Test TCP server");
+	ClientSocket = MakeShareable<FSocket>(ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateSocket(NAME_Stream, SocketDescription));
+	ClientSocket->SetNonBlocking();
 }
-
-void UVoiceComponent::StartTcpServer()
-{
-	auto Listener = new FTcpListener(FIPv4Endpoint(FIPv4Address(127, 0, 0, 1), 8890));
-	Listener->OnConnectionAccepted().BindUObject(this, &UVoiceComponent::ConnectionAccept);
-	UE_LOG(LogTemp, Warning, TEXT("Server started"));
-}
-
 
 void UVoiceComponent::BeginPlay()
 {
@@ -57,59 +54,61 @@ void UVoiceComponent::BeginPlay()
 
 	AudioComponent->SetSound(SoundWave);
 	AudioComponent->Play();
-}
 
-bool UVoiceComponent::ConnectionAccept(FSocket* ClientSocket, const FIPv4Endpoint& ClientEndpoint)
-{
-	auto Data = TArray<uint8>();
-	Data.SetNumUninitialized(2048);
-	auto CDO = GetMutableDefault<UVoiceComponent>();
-	
-	auto BytesRead = 0;
+	Owner->GetWorldTimerManager().SetTimer(
+		PlayVoiceCaptureTimer,
+		this,
+		&UVoiceComponent::RecieveVoiceData,
+		Rate,
+		true
+	);
 
-	ClientSocket->Wait(ESocketWaitConditions::WaitForRead, FTimespan(0, 0, 3));
-	auto bSuccess = ClientSocket->Recv(Data.GetData(), Data.Num(), BytesRead);
-
-	Data.SetNum(BytesRead);
-	
-	if (BytesRead == 0)
-	{
-		Data.SetNum(1);
-		Data[0] = 255;
-	}
-	
-	if (bSuccess)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Server: Bytes read: %d; Data: %d"), BytesRead, Data[0]);
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("Error"));
-	}
-
-	auto TempRawSize = UVOIPStatics::GetMaxUncompressedVoiceDataSizePerChannel();
-	auto TempDecodeBuffer = TArray<uint8>();
-	TempDecodeBuffer.SetNumUninitialized(TempRawSize);
-	VoiceDecoder->Decode(Data.GetData(), Data.Num(), TempDecodeBuffer.GetData(), TempRawSize);
-	SoundWave->QueueAudio(TempDecodeBuffer.GetData(), TempRawSize);
-
-	return true;
 }
 
 void UVoiceComponent::Send(const TArray<uint8>& InData)
 {
 	auto SocketDescription = FString("Test TCP server");
-	auto Socket = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateSocket(NAME_Stream, SocketDescription);
-	
+	if (ClientSocket->GetConnectionState() == ESocketConnectionState::SCS_NotConnected)
+	{
+		FIPv4Endpoint Endpoint;
+		FIPv4Endpoint::Parse(Address, Endpoint);
+		auto Addr = FIPv4Endpoint(Endpoint).ToInternetAddr();
+		auto bConnected = ClientSocket->Connect(Addr.Get());
+		ClientSocket->SetReuseAddr();
+		UE_LOG(LogTemp, Warning, TEXT("Client: Connect to %s. Connected: %d"), *Addr.Get().ToString(true), bConnected);
+	}
+
 	auto BytesSent = 0;
-	auto Address = FIPv4Endpoint(FIPv4Address(127, 0, 0, 1), 8890).ToInternetAddr();
-	auto bConnected = Socket->Connect(Address.Get());
-
-	UE_LOG(LogTemp, Warning, TEXT("Client: Sending %d to %s. Connected: %d"), InData[0], *Address.Get().ToString(true), bConnected);
-	auto bResult = Socket->Send(InData.GetData(), InData.Num(), BytesSent);
-
-	ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->DestroySocket(Socket);
+	UE_LOG(LogTemp, Warning, TEXT("Client: Sending %d"), InData[0]);
+	auto bResult = ClientSocket->Send(InData.GetData(), InData.Num(), BytesSent);
 	UE_LOG(LogTemp, Warning, TEXT("Client: Bytes sent: %d; Result: %d"), BytesSent, bResult);
+}
+
+void UVoiceComponent::RecieveVoiceData()
+{
+	if (ClientSocket->GetConnectionState() == ESocketConnectionState::SCS_NotConnected) { return; }
+	uint32 PendingDataSize = 0;
+	if (ClientSocket.Get()->HasPendingData(PendingDataSize))
+	{
+		if (PendingDataSize < 0) { return; }
+	}
+	auto Data = TArray<uint8>();
+	auto BytesRead = 0;
+
+	Data.SetNumUninitialized(MAX_VOICE_PACKAGE_SIZE);
+	//ClientSocket->Wait(ESocketWaitConditions::WaitForRead, WAIT_ONE_RATE);
+	ClientSocket->Recv(Data.GetData(), Data.Num(), BytesRead);
+
+	if (BytesRead > 0)
+	{
+		Data.SetNum(BytesRead);
+		UE_LOG(LogTemp, Warning, TEXT("Client: Bytes got: %d; Data: %d"), BytesRead, Data[0]);
+		auto TempRawSize = UVOIPStatics::GetMaxUncompressedVoiceDataSizePerChannel();
+		auto TempDecodeBuffer = TArray<uint8>();
+		TempDecodeBuffer.SetNumUninitialized(TempRawSize);
+		VoiceDecoder->Decode(Data.GetData(), Data.Num(), TempDecodeBuffer.GetData(), TempRawSize);
+		SoundWave->QueueAudio(TempDecodeBuffer.GetData(), TempRawSize);
+	}
 }
 
 void UVoiceComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -198,16 +197,6 @@ void UVoiceComponent::PlayVoiceCapture_Implementation()
 	if (AudioComponent->IsPlaying()) { return; }
 
 	AudioComponent->Play();
-}
-
-bool UVoiceComponent::SetBuffer_Validate(const TArray<uint8>& InReplicatedBuffer)
-{
-	return true;
-}
-
-void UVoiceComponent::SetBuffer_Implementation(const TArray<uint8>& InVoiceBuffer)
-{
-	SetBuffer_Multicast(InVoiceBuffer);
 }
 
 void UVoiceComponent::SetBuffer_Multicast_Implementation(const TArray<uint8>& InVoiceBuffer)

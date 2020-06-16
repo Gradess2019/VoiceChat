@@ -4,8 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "Interfaces/IPv4/IPv4Endpoint.h"
 #include "VoiceComponent.generated.h"
+
 
 class IVoiceCapture;
 class IVoiceEncoder;
@@ -23,9 +23,6 @@ class VOICECHAT_API UVoiceComponent : public UActorComponent
 
 public:
 
-	UFUNCTION(BlueprintCallable, Category = "Voice")
-	void StartTcpServer();
-	
 	UVoiceComponent();
 
 	UFUNCTION(BlueprintCallable, Category = "Voice")
@@ -42,6 +39,9 @@ protected:
 	TSharedPtr<IVoiceEncoder> VoiceEncoder;
 	TSharedPtr<IVoiceDecoder> VoiceDecoder;
 
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Voice")
+	FString Address;
+	
 	UPROPERTY(BlueprintReadWrite, Category = "Voice")
 	TArray<uint8> VoiceCaptureBuffer;
 
@@ -55,7 +55,7 @@ protected:
 	bool PlayVoiceCaptureFlag;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Voice")
-	FTimerHandle VoiceCaptureTickTimer;
+	FTimerHandle RecieveVoiceDataTimer;
 	
 	UPROPERTY(BlueprintReadWrite, Category = "Voice")
 	FTimerHandle PlayVoiceCaptureTimer;
@@ -78,6 +78,8 @@ protected:
 	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category = "Voice")
 	bool bCapturing;
 
+	TSharedPtr<FSocket> ClientSocket;
+
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Voice")
 	void VoiceCaptureTick();
 
@@ -89,20 +91,17 @@ protected:
 	virtual void PlayVoiceCapture_Implementation();
 
 	// Voice buffer replication
-
-	UFUNCTION(Server, WithValidation, Unreliable)
-	void SetBuffer(const TArray<uint8>& InVoiceBuffer);
-
 	UFUNCTION(NetMulticast, Unreliable)
 	void SetBuffer_Multicast(const TArray<uint8>& InVoiceBuffer);
 
-	//TCP
-
-	bool ConnectionAccept(FSocket* ClientSocket, const FIPv4Endpoint& ClientEndpoint);
-
+	// TCP
 	UFUNCTION(BlueprintCallable, Category = "Voice")
 	void Send(UPARAM(DisplayName = "Data") const TArray<uint8>& InData);
-	
+
+	UFUNCTION()
+	void RecieveVoiceData();
+
+
 public:	
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
