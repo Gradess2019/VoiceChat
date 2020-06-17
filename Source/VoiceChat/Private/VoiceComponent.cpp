@@ -56,10 +56,10 @@ void UVoiceComponent::BeginPlay()
 	AudioComponent->Play();
 
 	Owner->GetWorldTimerManager().SetTimer(
-		PlayVoiceCaptureTimer,
+		RecieveVoiceDataTimer,
 		this,
 		&UVoiceComponent::RecieveVoiceData,
-		Rate,
+		0.03f,
 		true
 	);
 
@@ -136,7 +136,7 @@ void UVoiceComponent::Stop()
 	VoiceCapture->Stop();
 	if (!PlayVoiceCaptureTimer.IsValid()) { return; }
 
-	PlayVoiceCaptureTimer.Invalidate();
+	Owner->GetWorldTimerManager().ClearTimer(PlayVoiceCaptureTimer);
 }
 
 void UVoiceComponent::VoiceCaptureTick_Implementation()

@@ -2,21 +2,50 @@
 
 
 #include "VoiceServer.h"
-#include "VoiceComponent.h"
 #include "Common/TcpListener.h"
-#include "Engine/World.h"
 #include "Runtime/Online/HTTP/Public/Http.h"
+#include "VoiceChat.h"
+#include "VoiceModule.h"
 #include "VoiceServerThread.h"
+
+int UVoiceServer::GetDefaultPort()
+{
+	auto Port = 0;
+	GConfig->GetInt(
+		TEXT("VoiceServer"),
+		TEXT("DefaultPort"),
+		Port,
+		FVoiceChatModule::GetConfigPath()
+	);
+	return Port;
+}
+
+FString UVoiceServer::GetDefaultAddress()
+{
+	auto Address = FString();
+	GConfig->GetString(
+		TEXT("VoiceServer"),
+		TEXT("DefaultAddress"),
+		Address,
+		FVoiceChatModule::GetConfigPath()
+	);
+	return Address;
+}
+
+FString UVoiceServer::GetDefaultIP()
+{
+	return GetDefaultAddress() + ":" + FString::FromInt(GetDefaultPort());
+}
 
 bool UVoiceServer::InitIP(bool bInLan)
 {
 	if (bInLan)
 	{
-		Address = FString("127.0.0.1:7778");
+		IP = GetDefaultIP();
 		StartTCPServer();
 		return true;
 	}
-	
+
 	auto Http = &FHttpModule::Get();
 
 	if (!Http)
@@ -29,8 +58,9 @@ bool UVoiceServer::InitIP(bool bInLan)
 		return false;
 	}
 
-	FString TargetHost = "http://api.ipify.org";
-	TSharedRef < IHttpRequest > Request = Http->CreateRequest();
+	auto TargetHost = FString("http://api.ipify.org");
+	auto Request = Http->CreateRequest();
+	
 	Request->SetVerb("GET");
 	Request->SetURL(TargetHost);
 	Request->SetHeader("User-Agent", "VictoryBPLibrary/1.0");
@@ -48,10 +78,25 @@ bool UVoiceServer::InitIP(bool bInLan)
 void UVoiceServer::StartTCPServer()
 {
 	FIPv4Endpoint Endpoint;
-	FIPv4Endpoint::Parse(Address, Endpoint);
+	FIPv4Endpoint::Parse("192.168.1.70:8930", Endpoint);
 	Listener = MakeShared<FTcpListener>(Endpoint);
 	Listener->OnConnectionAccepted().BindUObject(this, &UVoiceServer::ConnectionAccept);
-	UE_LOG(LogTemp, Warning, TEXT("Server started"));
+
+	if (Listener->GetSocket()) {
+
+		int32 OutRecieveBufferSize = 0;
+		int32 OutSendBufferSize = 0;
+
+		//Listener->GetSocket()->SetReceiveBufferSize(SERVER_RECEIVE_BUFFER_SIZE, OutRecieveBufferSize);
+		//Listener->GetSocket()->SetSendBufferSize(SERVER_SEND_BUFFER_SIZE, OutRecieveBufferSize);
+
+		UE_LOG(LogVoice, Display, TEXT("Server started\n"
+			"\tRecieve buffer size: %d\n"
+			"\tSend buffer size: %d"),
+			OutRecieveBufferSize,
+			OutSendBufferSize
+		);
+	}
 }
 
 bool UVoiceServer::ConnectionAccept(FSocket* ClientSocket, const FIPv4Endpoint& ClientEndpoint)
@@ -66,39 +111,36 @@ bool UVoiceServer::ConnectionAccept(FSocket* ClientSocket, const FIPv4Endpoint& 
 
 bool UVoiceServer::CheckSockets()
 {
-	if (RegisteredSockets.Num() <= 0) { return false; }
-	uint32 PendingData = 0;
-
-	//auto bContainsData = Listener->GetSocket()->HasPendingData(PendingData);
-	//if (!bContainsData) { return false; }
+	if (RegisteredSockets.Num() <= 1) { return false; }
 
 	TArray<FIPv4Endpoint> Keys;
 	RegisteredSockets.GenerateKeyArray(Keys);
-	
-	auto CurrentClientEndpoint = Keys[0];
-	auto CurrentClient = RegisteredSockets.Find(CurrentClientEndpoint)->Get();
-	auto Data = TArray<uint8>();
-	auto BytesRead = 0;
-	
-	Data.SetNumUninitialized(MAX_VOICE_PACKAGE_SIZE);
-	CurrentClient->Wait(ESocketWaitConditions::WaitForRead, WAIT_ONE_RATE);
-	auto bSuccess = CurrentClient->Recv(Data.GetData(), Data.Num(), BytesRead);
-	Data.SetNum(BytesRead);
 
-	if (BytesRead > 0)
+	for (auto CurrentClientEndpoint : Keys)
 	{
-		for (auto TargetClientEndpoint : Keys)
+		auto CurrentClientSocket = RegisteredSockets.Find(CurrentClientEndpoint)->Get();
+
+		auto Data = TArray<uint8>();
+		Data.SetNumUninitialized(MAX_VOICE_PACKAGE_SIZE);
+		//CurrentClientSocket->Wait(ESocketWaitConditions::WaitForRead, WAIT_ONE_RATE);
+
+		auto BytesRead = 0;
+		auto bSuccess = CurrentClientSocket->Recv(Data.GetData(), Data.Num(), BytesRead);
+		Data.SetNum(BytesRead);
+
+		if (BytesRead > 0)
 		{
-			if (TargetClientEndpoint == CurrentClientEndpoint) { continue; }
-			auto TargetClient = RegisteredSockets.Find(TargetClientEndpoint)->Get();
+			UE_LOG(LogVoice, Display, TEXT("Server: Bytes read: %d; Data: %d"), BytesRead, Data[0]);
+			for (auto TargetClientEndpoint : Keys)
+			{
+				if (TargetClientEndpoint == CurrentClientEndpoint) { continue; }
 
-			UE_LOG(LogTemp, Warning, TEXT("Server: Bytes read: %d; Data: %d"), BytesRead, Data[0]);
-			auto BytesSent = 0;
-			TargetClient->SendTo(Data.GetData(), Data.Num(), BytesSent, TargetClientEndpoint.ToInternetAddr().Get());
+				auto TargetClient = RegisteredSockets.Find(TargetClientEndpoint)->Get();
+				auto BytesSent = 0;
+
+				TargetClient->SendTo(Data.GetData(), Data.Num(), BytesSent, TargetClientEndpoint.ToInternetAddr().Get());
+			}
 		}
-	} else
-	{
-		//UE_LOG(LogTemp, Warning, TEXT("Server: There are no data"));
 	}
 
 	return true;
@@ -106,6 +148,14 @@ bool UVoiceServer::CheckSockets()
 
 void UVoiceServer::OnResponseReceived(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful)
 {
-	Address = Response->GetContentAsString() + ":7778";
+	if (bWasSuccessful)
+	{
+		IP = Response->GetContentAsString() + ":" + FString::FromInt(GetDefaultPort());
+		UE_LOG(LogVoice, Display, TEXT("Response received successfully. IP: %s"), *IP)
+	} else
+	{
+		IP = GetDefaultIP();
+		UE_LOG(LogVoice, Display, TEXT("Response doesn't received. The default IP will be used: %s"), *IP)
+	}
 	StartTCPServer();
 }

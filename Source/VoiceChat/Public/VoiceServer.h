@@ -10,13 +10,20 @@
 #include "Runtime/Online/HTTP/Public/Http.h"
 #include "VoiceServer.generated.h"
 
-#define MAX_VOICE_PACKAGE_SIZE 4096
-#define COMMAND_SIZE 4
-#define REGISTER_COMMAND TArray<uint8>({ 1, 1, 1, 1 })
-#define VOICE_INPUT_COMMAND TArray<uint8>({ 1, 1, 1, 2 })
+#define MAX_VOICE_PACKAGE_SIZE 2048
+
+#define MEGABYTE 1024 * 1024
+
+#define SERVER_RECEIVE_BUFFER_SIZE 6 * MEGABYTE
+#define SERVER_SEND_BUFFER_SIZE 6 * MEGABYTE
+
+#define CLIENT_RECEIVE_BUFFER_SIZE 2 * MEGABYTE
+#define CLIENT_SEND_BUFFER_SIZE 2 * MEGABYTE
 
 #define VOICE_RATE 0.3f
 #define WAIT_ONE_RATE FTimespan::FromSeconds(VOICE_RATE)
+
+#define LOCAL_HOST_ADDR FString("127.0.0.1")
 
 class FSocket;
 class FTcpListener;
@@ -30,6 +37,15 @@ class VOICECHAT_API UVoiceServer : public UObject
 public:
 
 	UFUNCTION(BlueprintCallable, Category = "Voice")
+	static int GetDefaultPort();
+
+	UFUNCTION(BlueprintCallable, Category = "Voice")
+	static FString GetDefaultAddress();
+	
+	UFUNCTION(BlueprintCallable, Category = "Voice")
+	static FString GetDefaultIP();
+	
+	UFUNCTION(BlueprintCallable, Category = "Voice")
 	bool InitIP(UPARAM(DisplayName = "LAN") bool bInLan);
 
 	UFUNCTION(BlueprintCallable, Category = "Voice")
@@ -42,17 +58,17 @@ public:
 
 protected:
 
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Voice")
-	FString Address;
+	UPROPERTY(BlueprintReadOnly, Category = "Voice")
+	FString IP;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Voice")
+	FTimerHandle SocketTimer;
 
 	TMap<FIPv4Endpoint, TSharedPtr<FSocket, ESPMode::ThreadSafe>> RegisteredSockets;
 
 	TSharedPtr<FTcpListener> Listener;
 
 	TSharedPtr<FVoiceServerThread> ServerThread;
-
-	UPROPERTY()
-	FTimerHandle SocketTimer;
 
 	void OnResponseReceived(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful);
 };
