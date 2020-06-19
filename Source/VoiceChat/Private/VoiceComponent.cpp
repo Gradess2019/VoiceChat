@@ -52,13 +52,13 @@ void UVoiceComponent::BeginPlay()
 	AudioComponent->SetSound(SoundWave);
 	AudioComponent->Play();
 
-	Owner->GetWorldTimerManager().SetTimer(
-		RecieveVoiceDataTimer,
-		this,
-		&UVoiceComponent::RecieveVoiceData,
-		0.03f,
-		true
-	);
+	//Owner->GetWorldTimerManager().SetTimer(
+	//	RecieveVoiceDataTimer,
+	//	this,
+	//	&UVoiceComponent::RecieveVoiceData,
+	//	0.03f,
+	//	true
+	//);
 }
 
 void UVoiceComponent::CreateSocket()

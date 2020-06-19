@@ -103,6 +103,8 @@ protected:
 	UFUNCTION()
 	void RecieveVoiceData();
 
+	friend class FRemoteVoiceHandler;
+	friend class FLocalVoiceHandler;
 
 public:	
 
