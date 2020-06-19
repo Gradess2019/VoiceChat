@@ -24,6 +24,7 @@ class VOICECHAT_API UVoiceComponent : public UActorComponent
 public:
 
 	UVoiceComponent();
+	void CreateSocket();
 
 	UFUNCTION(BlueprintCallable, Category = "Voice")
 	virtual void Start();
@@ -34,6 +35,7 @@ public:
 protected:
 
 	virtual void BeginPlay() override;
+	void ConnectToVoiceServer();
 
 	TSharedPtr<IVoiceCapture> VoiceCapture;
 	TSharedPtr<IVoiceEncoder> VoiceEncoder;
@@ -78,7 +80,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category = "Voice")
 	bool bCapturing;
 
-	TSharedPtr<FSocket> ClientSocket;
+	TSharedPtr<FSocket, ESPMode::ThreadSafe> ClientSocket;
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Voice")
 	void VoiceCaptureTick();

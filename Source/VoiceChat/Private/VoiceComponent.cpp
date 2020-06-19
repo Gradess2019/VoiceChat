@@ -20,15 +20,12 @@ UVoiceComponent::UVoiceComponent()
 	SetIsReplicatedByDefault(true);
 	Address = FString("127.0.0.1:7778");
 	Rate = 0.3f;
-
-	auto SocketDescription = FString("Test TCP server");
-	ClientSocket = MakeShareable<FSocket>(ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateSocket(NAME_Stream, SocketDescription));
-	ClientSocket->SetNonBlocking();
 }
 
 void UVoiceComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	CreateSocket();
 
 	Owner = Cast<APawn>(GetOwner());
 
@@ -62,31 +59,50 @@ void UVoiceComponent::BeginPlay()
 		0.03f,
 		true
 	);
+}
 
+void UVoiceComponent::CreateSocket()
+{
+	auto SocketDescription = FString("Test TCP server");
+	ClientSocket = MakeShareable<FSocket>(ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateSocket(NAME_Stream, SocketDescription));
+	ClientSocket.Get()->SetNonBlocking();
 }
 
 void UVoiceComponent::Send(const TArray<uint8>& InData)
 {
-	auto SocketDescription = FString("Test TCP server");
-	if (ClientSocket->GetConnectionState() == ESocketConnectionState::SCS_NotConnected)
+	if (!ClientSocket.IsValid())
 	{
-		FIPv4Endpoint Endpoint;
-		FIPv4Endpoint::Parse(Address, Endpoint);
-		auto Addr = FIPv4Endpoint(Endpoint).ToInternetAddr();
-		auto bConnected = ClientSocket->Connect(Addr.Get());
-		ClientSocket->SetReuseAddr();
-		UE_LOG(LogTemp, Warning, TEXT("Client: Connect to %s. Connected: %d"), *Addr.Get().ToString(true), bConnected);
+		CreateSocket();
+	}
+	
+	if (ClientSocket.Get()->GetConnectionState() == ESocketConnectionState::SCS_NotConnected)
+	{
+		ConnectToVoiceServer();
 	}
 
 	auto BytesSent = 0;
 	UE_LOG(LogTemp, Warning, TEXT("Client: Sending %d"), InData[0]);
-	auto bResult = ClientSocket->Send(InData.GetData(), InData.Num(), BytesSent);
+	auto bResult = ClientSocket.Get()->Send(InData.GetData(), InData.Num(), BytesSent);
 	UE_LOG(LogTemp, Warning, TEXT("Client: Bytes sent: %d; Result: %d"), BytesSent, bResult);
+}
+
+void UVoiceComponent::ConnectToVoiceServer()
+{
+	FIPv4Endpoint Endpoint;
+	FIPv4Endpoint::Parse(Address, Endpoint);
+	auto Addr = FIPv4Endpoint(Endpoint).ToInternetAddr();
+	auto bConnected = ClientSocket.Get()->Connect(Addr.Get());
+	ClientSocket.Get()->SetReuseAddr();
+	UE_LOG(LogTemp, Warning, TEXT("Client: Connect to %s. Connected: %d"), *Addr.Get().ToString(true), bConnected);
 }
 
 void UVoiceComponent::RecieveVoiceData()
 {
-	if (ClientSocket->GetConnectionState() == ESocketConnectionState::SCS_NotConnected) { return; }
+	if (!ClientSocket.IsValid())
+	{
+		CreateSocket();
+	}
+	if (ClientSocket.Get()->GetConnectionState() == ESocketConnectionState::SCS_NotConnected) { return; }
 	uint32 PendingDataSize = 0;
 	if (ClientSocket.Get()->HasPendingData(PendingDataSize))
 	{
@@ -97,7 +113,7 @@ void UVoiceComponent::RecieveVoiceData()
 
 	Data.SetNumUninitialized(MAX_VOICE_PACKAGE_SIZE);
 	//ClientSocket->Wait(ESocketWaitConditions::WaitForRead, WAIT_ONE_RATE);
-	ClientSocket->Recv(Data.GetData(), Data.Num(), BytesRead);
+	ClientSocket.Get()->Recv(Data.GetData(), Data.Num(), BytesRead);
 
 	if (BytesRead > 0)
 	{
@@ -115,11 +131,13 @@ void UVoiceComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActor
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	if (!VoiceCapture.IsValid()) { return; }
 	bCapturing = VoiceCapture->IsCapturing();
 }
 
 void UVoiceComponent::Start()
 {
+	if (!VoiceCapture.IsValid()) { return; }
 	VoiceCapture->Start();
 
 	Owner->GetWorldTimerManager().SetTimer(
@@ -133,7 +151,9 @@ void UVoiceComponent::Start()
 
 void UVoiceComponent::Stop()
 {
+	if (!VoiceCapture.IsValid()) { return; }
 	VoiceCapture->Stop();
+	
 	if (!PlayVoiceCaptureTimer.IsValid()) { return; }
 
 	Owner->GetWorldTimerManager().ClearTimer(PlayVoiceCaptureTimer);
@@ -188,7 +208,6 @@ void UVoiceComponent::PlayVoiceCapture_Implementation()
 
 	if (ReplicatedBuffer.Num() > 0)
 	{
-		//SetBuffer(ReplicatedBuffer);
 		Send(ReplicatedBuffer);
 
 		ReplicatedBuffer.Reset();

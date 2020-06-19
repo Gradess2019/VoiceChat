@@ -20,81 +20,31 @@ int UVoiceServer::GetDefaultPort()
 	return Port;
 }
 
-FString UVoiceServer::GetDefaultAddress()
+void UVoiceServer::InitIP()
 {
-	auto Address = FString();
-	GConfig->GetString(
-		TEXT("VoiceServer"),
-		TEXT("DefaultAddress"),
-		Address,
-		FVoiceChatModule::GetConfigPath()
-	);
-	return Address;
-}
-
-FString UVoiceServer::GetDefaultIP()
-{
-	return GetDefaultAddress() + ":" + FString::FromInt(GetDefaultPort());
-}
-
-bool UVoiceServer::InitIP(bool bInLan)
-{
-	if (bInLan)
-	{
-		IP = GetDefaultIP();
-		StartTCPServer();
-		return true;
-	}
-
-	auto Http = &FHttpModule::Get();
-
-	if (!Http)
-	{
-		return false;
-	}
-
-	if (!Http->IsHttpEnabled())
-	{
-		return false;
-	}
-
-	auto TargetHost = FString("http://api.ipify.org");
-	auto Request = Http->CreateRequest();
-	
-	Request->SetVerb("GET");
-	Request->SetURL(TargetHost);
-	Request->SetHeader("User-Agent", "VictoryBPLibrary/1.0");
-	Request->SetHeader("Content-Type", "text/html");
-
-	Request->OnProcessRequestComplete().BindUObject(this, &UVoiceServer::OnResponseReceived);
-	if (!Request->ProcessRequest())
-	{
-		return false;
-	}
-
-	return true;
+	auto bCanBindAll = false;
+	auto AddressPtr = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->GetLocalHostAddr(*GLog, bCanBindAll);
+	IP = AddressPtr->ToString(false) + ":" + FString::FromInt(GetDefaultPort());
 }
 
 void UVoiceServer::StartTCPServer()
 {
+	InitIP();
 	FIPv4Endpoint Endpoint;
-	FIPv4Endpoint::Parse("192.168.1.70:8930", Endpoint);
+	FIPv4Endpoint::Parse(IP, Endpoint);
 	Listener = MakeShared<FTcpListener>(Endpoint);
 	Listener->OnConnectionAccepted().BindUObject(this, &UVoiceServer::ConnectionAccept);
-
 	if (Listener->GetSocket()) {
 
 		int32 OutRecieveBufferSize = 0;
-		int32 OutSendBufferSize = 0;
 
-		//Listener->GetSocket()->SetReceiveBufferSize(SERVER_RECEIVE_BUFFER_SIZE, OutRecieveBufferSize);
-		//Listener->GetSocket()->SetSendBufferSize(SERVER_SEND_BUFFER_SIZE, OutRecieveBufferSize);
+		Listener->GetSocket()->SetReceiveBufferSize(SERVER_RECEIVE_BUFFER_SIZE, OutRecieveBufferSize);
 
-		UE_LOG(LogVoice, Display, TEXT("Server started\n"
-			"\tRecieve buffer size: %d\n"
-			"\tSend buffer size: %d"),
-			OutRecieveBufferSize,
-			OutSendBufferSize
+		UE_LOG(LogVoice, Display, TEXT("Server started"
+			"\n\tLocal IP: %s"
+			"\n\tRecieve buffer size: %d"),
+			*Listener.Get()->GetLocalEndpoint().ToString(),
+			OutRecieveBufferSize
 		);
 	}
 }
@@ -112,13 +62,14 @@ bool UVoiceServer::ConnectionAccept(FSocket* ClientSocket, const FIPv4Endpoint& 
 bool UVoiceServer::CheckSockets()
 {
 	if (RegisteredSockets.Num() <= 1) { return false; }
-
+	auto AvailableSockets = TMap<FIPv4Endpoint, TSharedPtr<FSocket, ESPMode::ThreadSafe>>(RegisteredSockets);
+	
 	TArray<FIPv4Endpoint> Keys;
-	RegisteredSockets.GenerateKeyArray(Keys);
+	AvailableSockets.GenerateKeyArray(Keys);
 
 	for (auto CurrentClientEndpoint : Keys)
 	{
-		auto CurrentClientSocket = RegisteredSockets.Find(CurrentClientEndpoint)->Get();
+		auto CurrentClientSocket = AvailableSockets.Find(CurrentClientEndpoint)->Get();
 
 		auto Data = TArray<uint8>();
 		Data.SetNumUninitialized(MAX_VOICE_PACKAGE_SIZE);
@@ -135,7 +86,7 @@ bool UVoiceServer::CheckSockets()
 			{
 				if (TargetClientEndpoint == CurrentClientEndpoint) { continue; }
 
-				auto TargetClient = RegisteredSockets.Find(TargetClientEndpoint)->Get();
+				auto TargetClient = AvailableSockets.Find(TargetClientEndpoint)->Get();
 				auto BytesSent = 0;
 
 				TargetClient->SendTo(Data.GetData(), Data.Num(), BytesSent, TargetClientEndpoint.ToInternetAddr().Get());
@@ -146,16 +97,3 @@ bool UVoiceServer::CheckSockets()
 	return true;
 }
 
-void UVoiceServer::OnResponseReceived(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful)
-{
-	if (bWasSuccessful)
-	{
-		IP = Response->GetContentAsString() + ":" + FString::FromInt(GetDefaultPort());
-		UE_LOG(LogVoice, Display, TEXT("Response received successfully. IP: %s"), *IP)
-	} else
-	{
-		IP = GetDefaultIP();
-		UE_LOG(LogVoice, Display, TEXT("Response doesn't received. The default IP will be used: %s"), *IP)
-	}
-	StartTCPServer();
-}
