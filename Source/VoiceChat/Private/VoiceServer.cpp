@@ -69,14 +69,14 @@ bool UVoiceServer::CheckSockets()
 
 	for (auto CurrentClientEndpoint : Keys)
 	{
-		auto CurrentClientSocket = AvailableSockets.Find(CurrentClientEndpoint)->Get();
-
+		auto CurrentClientSocket = AvailableSockets.FindRef(CurrentClientEndpoint);;
+		if (!CurrentClientSocket.IsValid()) { continue; }
+		
 		auto Data = TArray<uint8>();
 		Data.SetNumUninitialized(MAX_VOICE_PACKAGE_SIZE);
-		//CurrentClientSocket->Wait(ESocketWaitConditions::WaitForRead, WAIT_ONE_RATE);
 
 		auto BytesRead = 0;
-		auto bSuccess = CurrentClientSocket->Recv(Data.GetData(), Data.Num(), BytesRead);
+		CurrentClientSocket->Recv(Data.GetData(), Data.Num(), BytesRead);
 		Data.SetNum(BytesRead);
 
 		if (BytesRead > 0)
@@ -86,7 +86,7 @@ bool UVoiceServer::CheckSockets()
 			{
 				if (TargetClientEndpoint == CurrentClientEndpoint) { continue; }
 
-				auto TargetClient = AvailableSockets.Find(TargetClientEndpoint)->Get();
+				auto TargetClient = AvailableSockets.FindRef(TargetClientEndpoint);
 				auto BytesSent = 0;
 
 				TargetClient->SendTo(Data.GetData(), Data.Num(), BytesSent, TargetClientEndpoint.ToInternetAddr().Get());

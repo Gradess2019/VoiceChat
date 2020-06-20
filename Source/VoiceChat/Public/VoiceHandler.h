@@ -13,21 +13,22 @@ class VOICECHAT_API FVoiceHandler : public FRunnable
 {
 public:
 
-	FVoiceHandler(const TSharedPtr<UVoiceComponent, ESPMode::ThreadSafe>& InVoiceComponent, float InSleepTime)
+	FVoiceHandler(UVoiceComponent* InVoiceComponent, float InSleepTime)
 		: VoiceComponent(InVoiceComponent), SleepTime(InSleepTime), Thread(nullptr), bStopped(false) {}
 
+	//FVoiceHandler(const TSharedPtr<FVoiceHandler>& InVoiceHandler);
+	
 	virtual ~FVoiceHandler() override;
 
-	uint32 Run() override;
-	virtual void Stop() override;
-
-	virtual uint32 DoTask() = 0;
-
 	virtual void Start();
+	virtual void Stop() override;
+	uint32 Run() override;
+	virtual uint32 DoTask() = 0;
 
 protected:
 
-	TSharedPtr<UVoiceComponent, ESPMode::ThreadSafe> VoiceComponent;
+	UPROPERTY()
+	UVoiceComponent* VoiceComponent;
 
 	float SleepTime;
 

@@ -25,6 +25,7 @@ class VOICECHAT_API UVoiceComponent : public UActorComponent
 
 public:
 
+	UFUNCTION(BlueprintCallable, Category = "Voice")
 	void InitRemoteVoiceHandler();
 	void SetConnectToServerTimer();
 	UVoiceComponent();
@@ -42,10 +43,15 @@ protected:
 
 	virtual void BeginPlay() override;
 
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 	UFUNCTION(BlueprintCallable, Category = "Voice")
 	bool ConnectToVoiceServer();
 	bool SocketConnected(bool bInTryToConnect = true);
 
+	UPROPERTY(BlueprintReadOnly, Category = "Voice")
+	int64 NumOfBytes;
+	
 	TSharedPtr<IVoiceCapture> VoiceCapture;
 	TSharedPtr<IVoiceEncoder> VoiceEncoder;
 	TSharedPtr<IVoiceDecoder> VoiceDecoder;

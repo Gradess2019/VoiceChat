@@ -12,7 +12,7 @@ class VOICECHAT_API FRemoteVoiceHandler : public FVoiceHandler
 {
 public:
 
-	FRemoteVoiceHandler(const TSharedPtr<UVoiceComponent, ESPMode::ThreadSafe>& InVoiceComponent, float InSleepTime)
+	FRemoteVoiceHandler(UVoiceComponent* InVoiceComponent, float InSleepTime)
 		: FVoiceHandler(InVoiceComponent, InSleepTime) {}
 
 	uint32 DoTask() override;

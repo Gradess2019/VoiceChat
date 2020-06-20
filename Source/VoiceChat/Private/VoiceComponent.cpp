@@ -25,25 +25,22 @@ UVoiceComponent::UVoiceComponent()
 void UVoiceComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	Owner = Cast<APawn>(GetOwner());
 
-	if (!IsValid(Owner) && Owner->IsLocallyControlled())
+	Owner = Cast<APawn>(GetOwner());
+	if (!IsValid(Owner) || !Owner->IsLocallyControlled())
 	{
-		DestroyComponent();
+		//DestroyComponent();
 		return;
 	}
-	
+
 	VoiceCapture = FVoiceModule::Get().CreateVoiceCapture();
 	VoiceEncoder = FVoiceModule::Get().CreateVoiceEncoder();
 	VoiceDecoder = FVoiceModule::Get().CreateVoiceDecoder();
 	InitRemoteVoiceHandler();
-
 	CreateSocket();
-	if (!ConnectToVoiceServer())
-	{
-		SetConnectToServerTimer();
-	}
+	
 	AudioComponent = Cast<UAudioComponent>(GetOwner()->GetComponentByClass(UAudioComponent::StaticClass()));
+
 	SoundWave = NewObject<USoundWaveProcedural>();
 	SoundWave->SetSampleRate(UVOIPStatics::GetVoiceSampleRate());
 	SoundWave->NumChannels = 1;
@@ -57,10 +54,30 @@ void UVoiceComponent::BeginPlay()
 	AudioComponent->Play();
 }
 
+void UVoiceComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (ClientSocket.IsValid())
+	{
+		ClientSocket->Close();
+	}
+	if (RemoteVoiceHandler.IsValid())
+	{
+		RemoteVoiceHandler->Stop();
+		RemoteVoiceHandler.Reset();
+	}
+
+	if (LocalVoiceHandler.IsValid())
+	{
+		LocalVoiceHandler->Stop();
+		LocalVoiceHandler.Reset();
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
 void UVoiceComponent::InitRemoteVoiceHandler()
 {
-	SelfPtr = MakeShareable(this);
-	RemoteVoiceHandler = MakeShared<FRemoteVoiceHandler>(SelfPtr, Rate);
+	RemoteVoiceHandler = MakeShared<FRemoteVoiceHandler>(this, Rate);
 
 	if (!RemoteVoiceHandler.IsValid())
 	{
@@ -68,6 +85,8 @@ void UVoiceComponent::InitRemoteVoiceHandler()
 		return;
 	}
 
+	NumOfBytes = 0;
+	RemoteVoiceHandler->Start();
 	UE_LOG(LogVoice, Display, TEXT("Voice handlers were initialized successfully"));
 }
 
@@ -80,8 +99,9 @@ void UVoiceComponent::CreateSocket()
 		UE_LOG(LogVoice, Error, TEXT("Could not create socket. Func: %s, Line: %s"), *FString(__FUNCTION__), *FString::FromInt(__LINE__));
 		return;
 	}
-	ClientSocket.Get()->SetNonBlocking();
+	//ClientSocket.Get()->SetNonBlocking();
 	UE_LOG(LogVoice, Display, TEXT("Client socket was created successfully."));
+
 }
 
 bool UVoiceComponent::ConnectToVoiceServer()
@@ -93,17 +113,12 @@ bool UVoiceComponent::ConnectToVoiceServer()
 	FIPv4Endpoint::Parse(Address, Endpoint);
 
 	auto Addr = FIPv4Endpoint(Endpoint).ToInternetAddr();
+
+	UE_LOG(LogVoice, Display, TEXT("Try to connect to %s..."), *Addr->ToString(true));
 	auto bConnected = ClientSocket.Get()->Connect(Addr.Get());
+	UE_LOG(LogVoice, Display, TEXT("Server IP: %s; Connected: %d"), *Addr->ToString(true), bConnected);
 
-	ClientSocket.Get()->SetReuseAddr();
-
-	UE_LOG(LogVoice, Display, TEXT("Try to connect to %s; Connected: %d"), *Addr->ToString(true), bConnected);
-
-	if (bConnected && RemoteVoiceHandler.IsValid())
-	{
-		RemoteVoiceHandler->Start();
-		Owner->GetWorldTimerManager().ClearTimer(ConnectToServerTimer);
-	}
+	//ClientSocket.Get()->SetReuseAddr();
 
 	return bConnected;
 }
@@ -150,9 +165,9 @@ void UVoiceComponent::ReceiveVoiceData()
 	if (!SocketConnected()) { return; }
 
 	uint32 PendingDataSize = 0;
-	if (ClientSocket.Get()->HasPendingData(PendingDataSize))
+	if (!ClientSocket.Get()->HasPendingData(PendingDataSize) && PendingDataSize <= 0)
 	{
-		if (PendingDataSize < 0) { return; }
+		return;
 	}
 
 	auto Data = TArray<uint8>();
@@ -160,6 +175,7 @@ void UVoiceComponent::ReceiveVoiceData()
 
 	Data.SetNumUninitialized(MAX_VOICE_PACKAGE_SIZE);
 	ClientSocket.Get()->Recv(Data.GetData(), Data.Num(), BytesRead);
+	if (this->IsPendingKillOrUnreachable()) { return; }
 
 	if (BytesRead > 0)
 	{
@@ -170,6 +186,7 @@ void UVoiceComponent::ReceiveVoiceData()
 		TempDecodeBuffer.SetNumUninitialized(TempRawSize);
 		VoiceDecoder->Decode(Data.GetData(), Data.Num(), TempDecodeBuffer.GetData(), TempRawSize);
 		SoundWave->QueueAudio(TempDecodeBuffer.GetData(), TempRawSize);
+		NumOfBytes += BytesRead;
 	}
 }
 
@@ -182,7 +199,7 @@ void UVoiceComponent::Start()
 {
 	if (!VoiceCapture.IsValid()) { return; }
 
-	LocalVoiceHandler = MakeShared<FLocalVoiceHandler>(SelfPtr, Rate);
+	LocalVoiceHandler = MakeShared<FLocalVoiceHandler>(this, Rate);
 	if (!LocalVoiceHandler.IsValid())
 	{
 		UE_LOG(LogVoice, Error, TEXT("LocalVoiceHandler is null! Func: %s; Line: %s"), *FString(__FUNCTION__), *FString::FromInt(__LINE__));
