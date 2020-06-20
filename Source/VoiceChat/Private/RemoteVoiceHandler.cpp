@@ -4,6 +4,13 @@
 
 uint32 FRemoteVoiceHandler::DoTask()
 {
-	VoiceComponent->RecieveVoiceData();
+	auto bConnected = VoiceComponent->CheckSocketConnection();
+	if (bConnected)
+	{
+		VoiceComponent->ReceiveVoiceData();
+	}
+	else {
+		FPlatformProcess::Sleep(SleepTime);
+	}
 	return RECEIVE_VOICE_DATA_SUCCESS;
 }

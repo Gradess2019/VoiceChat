@@ -12,8 +12,7 @@ FVoiceHandler::~FVoiceHandler()
 
 uint32 FVoiceHandler::Run()
 {
-	// Set default value of Result variable
-	uint32 Result = THREAD_STOPPED_BEFORE_CYCLE;
+	uint32 Result = THREAD_RETURN_DEFAULT_VALUE;
 	while (!bStopped)
 	{
 		if (VoiceComponent)
@@ -28,8 +27,15 @@ uint32 FVoiceHandler::Run()
 	return Result;
 }
 
+void FVoiceHandler::Start()
+{
+	Thread = FRunnableThread::Create(this, TEXT("RemoteVoiceHandlerThread"));
+}
+
 void FVoiceHandler::Stop()
 {
 	bStopped = true;
 }
+
+
 

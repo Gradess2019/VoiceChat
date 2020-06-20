@@ -4,6 +4,7 @@
 
 uint32 FLocalVoiceHandler::DoTask()
 {
-	VoiceComponent->PlayVoiceCapture();
+	FPlatformProcess::Sleep(SleepTime);
+	VoiceComponent->CaptureAndSendVoiceData();
 	return SEND_VOICE_DATA_SUCCESS;
 }

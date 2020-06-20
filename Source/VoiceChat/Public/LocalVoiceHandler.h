@@ -8,12 +8,12 @@
 /**
  * 
  */
-class VOICECHAT_API FLocalVoiceHandler : FVoiceHandler
+class VOICECHAT_API FLocalVoiceHandler : public FVoiceHandler
 {
 public:
 
-	explicit FLocalVoiceHandler(const TSharedPtr<UVoiceComponent, ESPMode::ThreadSafe>& VoiceComponent)
-		: FVoiceHandler(VoiceComponent) {}
+	FLocalVoiceHandler(const TSharedPtr<UVoiceComponent, ESPMode::ThreadSafe>& InVoiceComponent, float InSleepTime)
+		: FVoiceHandler(InVoiceComponent, InSleepTime) {}
 
 	uint32 DoTask() override;
 

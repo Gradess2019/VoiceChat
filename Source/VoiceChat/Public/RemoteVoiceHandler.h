@@ -8,12 +8,12 @@
 /**
  * 
  */
-class VOICECHAT_API FRemoteVoiceHandler : FVoiceHandler
+class VOICECHAT_API FRemoteVoiceHandler : public FVoiceHandler
 {
 public:
 
-	explicit FRemoteVoiceHandler(const TSharedPtr<UVoiceComponent, ESPMode::ThreadSafe>& VoiceComponent)
-		: FVoiceHandler(VoiceComponent) {}
+	FRemoteVoiceHandler(const TSharedPtr<UVoiceComponent, ESPMode::ThreadSafe>& InVoiceComponent, float InSleepTime)
+		: FVoiceHandler(InVoiceComponent, InSleepTime) {}
 
 	uint32 DoTask() override;
 };

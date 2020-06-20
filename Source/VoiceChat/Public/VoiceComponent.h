@@ -15,6 +15,8 @@ class USoundWave;
 class APawn;
 class UAudioComponent;
 class FSocket;
+class FRemoteVoiceHandler;
+class FLocalVoiceHandler;
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class VOICECHAT_API UVoiceComponent : public UActorComponent
@@ -23,8 +25,12 @@ class VOICECHAT_API UVoiceComponent : public UActorComponent
 
 public:
 
+	void InitRemoteVoiceHandler();
+	void SetConnectToServerTimer();
 	UVoiceComponent();
 	void CreateSocket();
+	bool CheckSocketConnection(bool bInTryToConnect = false);
+	bool CheckSocket(bool bInTryToCreate = false);
 
 	UFUNCTION(BlueprintCallable, Category = "Voice")
 	virtual void Start();
@@ -35,11 +41,20 @@ public:
 protected:
 
 	virtual void BeginPlay() override;
-	void ConnectToVoiceServer();
+
+	UFUNCTION(BlueprintCallable, Category = "Voice")
+	bool ConnectToVoiceServer();
+	bool SocketConnected(bool bInTryToConnect = true);
 
 	TSharedPtr<IVoiceCapture> VoiceCapture;
 	TSharedPtr<IVoiceEncoder> VoiceEncoder;
 	TSharedPtr<IVoiceDecoder> VoiceDecoder;
+	
+	TSharedPtr<FRemoteVoiceHandler> RemoteVoiceHandler;
+	TSharedPtr<FLocalVoiceHandler> LocalVoiceHandler;
+	TSharedPtr<FSocket, ESPMode::ThreadSafe> ClientSocket;
+
+	TSharedPtr<UVoiceComponent, ESPMode::ThreadSafe> SelfPtr;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Voice")
 	FString Address;
@@ -52,15 +67,6 @@ protected:
 
 	UPROPERTY(BlueprintReadWrite, Category = "Voice")
 	TArray<uint8> AdditionalReplicatedBuffer;
-
-	UPROPERTY(BlueprintReadWrite, Category = "Voice")
-	bool PlayVoiceCaptureFlag;
-
-	UPROPERTY(BlueprintReadWrite, Category = "Voice")
-	FTimerHandle RecieveVoiceDataTimer;
-	
-	UPROPERTY(BlueprintReadWrite, Category = "Voice")
-	FTimerHandle PlayVoiceCaptureTimer;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Voice")
 	USoundWaveProcedural* SoundWave;
@@ -77,37 +83,30 @@ protected:
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Voice")
 	float Rate;
 	
-	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category = "Voice")
+	UPROPERTY(BlueprintReadOnly, Category = "Voice")
 	bool bCapturing;
-
-	TSharedPtr<FSocket, ESPMode::ThreadSafe> ClientSocket;
-
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Voice")
-	void VoiceCaptureTick();
-
-	virtual void VoiceCaptureTick_Implementation();
+	
+	UPROPERTY(BlueprintReadOnly, Category = "Voice")
+	FTimerHandle ConnectToServerTimer;
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Voice")
-	void PlayVoiceCapture();
+	void CaptureVoice();
 
-	virtual void PlayVoiceCapture_Implementation();
+	virtual void CaptureVoice_Implementation();
 
-	// Voice buffer replication
-	UFUNCTION(NetMulticast, Unreliable)
-	void SetBuffer_Multicast(const TArray<uint8>& InVoiceBuffer);
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Voice")
+	void CaptureAndSendVoiceData();
+
+	virtual void CaptureAndSendVoiceData_Implementation();
 
 	// TCP
 	UFUNCTION(BlueprintCallable, Category = "Voice")
 	void Send(UPARAM(DisplayName = "Data") const TArray<uint8>& InData);
 
 	UFUNCTION()
-	void RecieveVoiceData();
+	void ReceiveVoiceData();
 
 	friend class FRemoteVoiceHandler;
 	friend class FLocalVoiceHandler;
 
-public:	
-
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-		
 };
