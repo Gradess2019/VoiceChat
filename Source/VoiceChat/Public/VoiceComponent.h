@@ -25,13 +25,16 @@ class VOICECHAT_API UVoiceComponent : public UActorComponent
 
 public:
 
-	UFUNCTION(BlueprintCallable, Category = "Voice")
-	void InitRemoteVoiceHandler();
-	void SetConnectToServerTimer();
 	UVoiceComponent();
-	void CreateSocket();
-	bool CheckSocketConnection(bool bInTryToConnect = false);
-	bool CheckSocket(bool bInTryToCreate = false);
+	
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Voice")
+	virtual bool IsSocketValidAndConnected(UPARAM(DisplayName = "Try to connect") bool bInTryToConnect = true);
+
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Voice")
+	virtual bool IsSocketValid(bool bInTryToCreate = false);
+	
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Voice")
+	virtual bool IsSocketConnected(UPARAM(DisplayName = "Try to connect") bool bInTryToConnect = false);
 
 	UFUNCTION(BlueprintCallable, Category = "Voice")
 	virtual void Start();
@@ -39,18 +42,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Voice")
 	virtual void Stop();
 
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Voice")
+	virtual bool IsCapturing();
+
 protected:
-
-	virtual void BeginPlay() override;
-
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-
-	UFUNCTION(BlueprintCallable, Category = "Voice")
-	bool ConnectToVoiceServer();
-	bool SocketConnected(bool bInTryToConnect = true);
-
-	UPROPERTY(BlueprintReadOnly, Category = "Voice")
-	int64 NumOfBytes;
 	
 	TSharedPtr<IVoiceCapture> VoiceCapture;
 	TSharedPtr<IVoiceEncoder> VoiceEncoder;
@@ -60,7 +55,8 @@ protected:
 	TSharedPtr<FLocalVoiceHandler> LocalVoiceHandler;
 	TSharedPtr<FSocket, ESPMode::ThreadSafe> ClientSocket;
 
-	TSharedPtr<UVoiceComponent, ESPMode::ThreadSafe> SelfPtr;
+	UPROPERTY(BlueprintReadOnly, Category = "Voice")
+	int64 NumOfBytes;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Voice")
 	FString Address;
@@ -89,28 +85,32 @@ protected:
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Voice")
 	float Rate;
 	
-	UPROPERTY(BlueprintReadOnly, Category = "Voice")
-	bool bCapturing;
+	virtual void BeginPlay() override;
+
+	UFUNCTION()
+	virtual void InitRemoteVoiceHandler();
+
+	UFUNCTION()
+	virtual void CreateSocket();
+
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	UFUNCTION()
+	virtual bool ConnectToVoiceServer();
 	
-	UPROPERTY(BlueprintReadOnly, Category = "Voice")
-	FTimerHandle ConnectToServerTimer;
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Voice")
+	void CaptureAndSendVoiceData();
+	virtual void CaptureAndSendVoiceData_Implementation();
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Voice")
 	void CaptureVoice();
-
 	virtual void CaptureVoice_Implementation();
 
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Voice")
-	void CaptureAndSendVoiceData();
-
-	virtual void CaptureAndSendVoiceData_Implementation();
-
-	// TCP
-	UFUNCTION(BlueprintCallable, Category = "Voice")
-	void Send(UPARAM(DisplayName = "Data") const TArray<uint8>& InData);
+	UFUNCTION()
+	virtual void Send(UPARAM(DisplayName = "Data") const TArray<uint8>& InData);
 
 	UFUNCTION()
-	void ReceiveVoiceData();
+	virtual void ReceiveVoiceData();
 
 	friend class FRemoteVoiceHandler;
 	friend class FLocalVoiceHandler;

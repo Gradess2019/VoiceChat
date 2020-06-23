@@ -4,7 +4,7 @@
 
 uint32 FRemoteVoiceHandler::DoTask()
 {
-	auto bConnected = VoiceComponent->CheckSocketConnection();
+	auto bConnected = VoiceComponent->IsSocketConnected();
 	if (VoiceComponent->IsPendingKillOrUnreachable()) { return VOICE_COMPONENT_NULL; }
 	
 	if (bConnected)

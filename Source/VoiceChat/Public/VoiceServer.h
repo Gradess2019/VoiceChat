@@ -34,10 +34,13 @@ class VOICECHAT_API UVoiceServer : public UObject
 public:
 
 	UFUNCTION(BlueprintCallable, Category = "Voice")
-	static int GetDefaultPort();
-	
+	void Init();
+
 	UFUNCTION(BlueprintCallable, Category = "Voice")
-	void InitIP();
+	static FString AppendDefaultPort(FString Address);
+
+	UFUNCTION(BlueprintCallable, Category = "Voice")
+	static int GetDefaultPort();
 
 	UFUNCTION(BlueprintCallable, Category = "Voice")
 	void StartTCPServer();
@@ -45,12 +48,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Voice")
 	bool CheckSockets();
 	
-	bool ConnectionAccept(FSocket* ClientSocket, const FIPv4Endpoint& ClientEndpoint);
-
 protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Voice")
-	FString IP;
+	FString LocalIP;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Voice")
+	FString PublicIP;
 
 	TMap<FIPv4Endpoint, TSharedPtr<FSocket, ESPMode::ThreadSafe>> RegisteredSockets;
 
@@ -58,4 +62,10 @@ protected:
 
 	TSharedPtr<FVoiceServerThread> ServerThread;
 
+	void OnResponseReceived(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful);
+	
+	UFUNCTION()
+	void InitLocalIP();
+
+	bool ConnectionAccept(FSocket* ClientSocket, const FIPv4Endpoint& ClientEndpoint);
 };

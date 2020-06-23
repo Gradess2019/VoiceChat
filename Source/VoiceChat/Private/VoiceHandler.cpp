@@ -1,10 +1,5 @@
 #include "VoiceHandler.h"
 #include "HAL/RunnableThread.h"
-//
-//FVoiceHandler::FVoiceHandler(const TSharedPtr<FVoiceHandler>& InVoiceHandler)
-//{
-//	
-//}
 
 FVoiceHandler::~FVoiceHandler()
 {

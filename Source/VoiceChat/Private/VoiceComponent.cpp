@@ -18,7 +18,6 @@
 
 UVoiceComponent::UVoiceComponent()
 {
-	Address = FString("127.0.0.1:7778");
 	Rate = 0.3f;
 }
 
@@ -29,6 +28,7 @@ void UVoiceComponent::BeginPlay()
 	Owner = Cast<APawn>(GetOwner());
 	if (!IsValid(Owner) || !Owner->IsLocallyControlled())
 	{
+		//TODO Fix crash
 		//DestroyComponent();
 		return;
 	}
@@ -36,8 +36,8 @@ void UVoiceComponent::BeginPlay()
 	VoiceCapture = FVoiceModule::Get().CreateVoiceCapture();
 	VoiceEncoder = FVoiceModule::Get().CreateVoiceEncoder();
 	VoiceDecoder = FVoiceModule::Get().CreateVoiceDecoder();
-	InitRemoteVoiceHandler();
 	CreateSocket();
+	InitRemoteVoiceHandler();
 	
 	AudioComponent = Cast<UAudioComponent>(GetOwner()->GetComponentByClass(UAudioComponent::StaticClass()));
 
@@ -52,27 +52,6 @@ void UVoiceComponent::BeginPlay()
 
 	AudioComponent->SetSound(SoundWave);
 	AudioComponent->Play();
-}
-
-void UVoiceComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
-{
-	if (ClientSocket.IsValid())
-	{
-		ClientSocket->Close();
-	}
-	if (RemoteVoiceHandler.IsValid())
-	{
-		RemoteVoiceHandler->Stop();
-		RemoteVoiceHandler.Reset();
-	}
-
-	if (LocalVoiceHandler.IsValid())
-	{
-		LocalVoiceHandler->Stop();
-		LocalVoiceHandler.Reset();
-	}
-
-	Super::EndPlay(EndPlayReason);
 }
 
 void UVoiceComponent::InitRemoteVoiceHandler()
@@ -99,15 +78,34 @@ void UVoiceComponent::CreateSocket()
 		UE_LOG(LogVoice, Error, TEXT("Could not create socket. Func: %s, Line: %s"), *FString(__FUNCTION__), *FString::FromInt(__LINE__));
 		return;
 	}
-	//ClientSocket.Get()->SetNonBlocking();
 	UE_LOG(LogVoice, Display, TEXT("Client socket was created successfully."));
+}
 
+void UVoiceComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (ClientSocket.IsValid())
+	{
+		ClientSocket->Close();
+	}
+	if (RemoteVoiceHandler.IsValid())
+	{
+		RemoteVoiceHandler->Stop();
+		RemoteVoiceHandler.Reset();
+	}
+
+	if (LocalVoiceHandler.IsValid())
+	{
+		LocalVoiceHandler->Stop();
+		LocalVoiceHandler.Reset();
+	}
+
+	Super::EndPlay(EndPlayReason);
 }
 
 bool UVoiceComponent::ConnectToVoiceServer()
 {
-	if (!ClientSocket.IsValid()) { return false; }
-	if (ClientSocket.Get()->GetConnectionState() == ESocketConnectionState::SCS_Connected) { return true; }
+	if (IsSocketValidAndConnected(false)) { return true; }
+	if (Address.IsEmpty()) { return false; }
 
 	FIPv4Endpoint Endpoint;
 	FIPv4Endpoint::Parse(Address, Endpoint);
@@ -115,42 +113,18 @@ bool UVoiceComponent::ConnectToVoiceServer()
 	auto Addr = FIPv4Endpoint(Endpoint).ToInternetAddr();
 
 	UE_LOG(LogVoice, Display, TEXT("Try to connect to %s..."), *Addr->ToString(true));
-	auto bConnected = ClientSocket.Get()->Connect(Addr.Get());
+	auto bConnected = ClientSocket->Connect(Addr.Get());
 	UE_LOG(LogVoice, Display, TEXT("Server IP: %s; Connected: %d"), *Addr->ToString(true), bConnected);
-
-	//ClientSocket.Get()->SetReuseAddr();
 
 	return bConnected;
 }
 
-void UVoiceComponent::SetConnectToServerTimer()
+bool UVoiceComponent::IsSocketValidAndConnected(bool bInTryToConnect)
 {
-	FTimerDelegate ConnectToServerDelegate;
-	ConnectToServerDelegate.BindUFunction(this, FName("ConnectToVoiceServer"));
-	Owner->GetWorldTimerManager().SetTimer(
-		ConnectToServerTimer,
-		0.5f,
-		true
-	);
+	return IsSocketValid(bInTryToConnect) && IsSocketConnected(bInTryToConnect);
 }
 
-bool UVoiceComponent::CheckSocketConnection(bool bInTryToConnect)
-{
-	if (!ClientSocket.IsValid()) { return false; }
-	return bInTryToConnect ? ConnectToVoiceServer() : ClientSocket->GetConnectionState() == ESocketConnectionState::SCS_Connected;
-}
-
-void UVoiceComponent::Send(const TArray<uint8>& InData)
-{
-	if (!SocketConnected()) { return; }
-
-	auto BytesSent = 0;
-	UE_LOG(LogTemp, Warning, TEXT("Client: Sending %d"), InData[0]);
-	auto bResult = ClientSocket.Get()->Send(InData.GetData(), InData.Num(), BytesSent);
-	UE_LOG(LogTemp, Warning, TEXT("Client: Bytes sent: %d; Result: %d"), BytesSent, bResult);
-}
-
-bool UVoiceComponent::CheckSocket(bool bInTryToCreate)
+bool UVoiceComponent::IsSocketValid(bool bInTryToCreate)
 {
 	if (!ClientSocket.IsValid() && bInTryToCreate)
 	{
@@ -160,39 +134,10 @@ bool UVoiceComponent::CheckSocket(bool bInTryToCreate)
 	return ClientSocket.IsValid();
 }
 
-void UVoiceComponent::ReceiveVoiceData()
+bool UVoiceComponent::IsSocketConnected(bool bInTryToConnect)
 {
-	if (!SocketConnected()) { return; }
-
-	uint32 PendingDataSize = 0;
-	if (!ClientSocket.Get()->HasPendingData(PendingDataSize) && PendingDataSize <= 0)
-	{
-		return;
-	}
-
-	auto Data = TArray<uint8>();
-	auto BytesRead = 0;
-
-	Data.SetNumUninitialized(MAX_VOICE_PACKAGE_SIZE);
-	ClientSocket.Get()->Recv(Data.GetData(), Data.Num(), BytesRead);
-	if (this->IsPendingKillOrUnreachable()) { return; }
-
-	if (BytesRead > 0)
-	{
-		Data.SetNum(BytesRead);
-		UE_LOG(LogTemp, Warning, TEXT("Client: Bytes got: %d; Data: %d"), BytesRead, Data[0]);
-		auto TempRawSize = UVOIPStatics::GetMaxUncompressedVoiceDataSizePerChannel();
-		auto TempDecodeBuffer = TArray<uint8>();
-		TempDecodeBuffer.SetNumUninitialized(TempRawSize);
-		VoiceDecoder->Decode(Data.GetData(), Data.Num(), TempDecodeBuffer.GetData(), TempRawSize);
-		SoundWave->QueueAudio(TempDecodeBuffer.GetData(), TempRawSize);
-		NumOfBytes += BytesRead;
-	}
-}
-
-bool UVoiceComponent::SocketConnected(bool bInTryToConnect)
-{
-	return CheckSocket(bInTryToConnect) && CheckSocketConnection(bInTryToConnect);
+	if (!ClientSocket.IsValid()) { return false; }
+	return bInTryToConnect ? ConnectToVoiceServer() : ClientSocket->GetConnectionState() == ESocketConnectionState::SCS_Connected;
 }
 
 void UVoiceComponent::Start()
@@ -207,9 +152,7 @@ void UVoiceComponent::Start()
 	}
 
 	VoiceCapture->Start();
-	bCapturing = true;
 	LocalVoiceHandler->Start();
-
 }
 
 void UVoiceComponent::Stop()
@@ -221,7 +164,6 @@ void UVoiceComponent::Stop()
 
 	if (!VoiceCapture.IsValid()) { return; }
 	VoiceCapture->Stop();
-	bCapturing = false;
 }
 
 void UVoiceComponent::CaptureAndSendVoiceData_Implementation()
@@ -281,4 +223,50 @@ void UVoiceComponent::CaptureVoice_Implementation()
 		TempEncodeBuffer.SetNum(CompressedSize);
 		ReplicatedBuffer.Append(TempEncodeBuffer);
 	}
+}
+
+void UVoiceComponent::Send(const TArray<uint8>& InData)
+{
+	if (!IsSocketValidAndConnected()) { return; }
+
+	auto BytesSent = 0;
+	UE_LOG(LogTemp, Warning, TEXT("Client: Sending %d"), InData[0]);
+	auto bResult = ClientSocket->Send(InData.GetData(), InData.Num(), BytesSent);
+	UE_LOG(LogTemp, Warning, TEXT("Client: Bytes sent: %d; Result: %d"), BytesSent, bResult);
+}
+
+void UVoiceComponent::ReceiveVoiceData()
+{
+	if (!IsSocketValidAndConnected()) { return; }
+
+	uint32 PendingDataSize = 0;
+	if (!ClientSocket->HasPendingData(PendingDataSize) && PendingDataSize <= 0)
+	{
+		return;
+	}
+
+	auto Data = TArray<uint8>();
+	auto BytesRead = 0;
+
+	Data.SetNumUninitialized(MAX_VOICE_PACKAGE_SIZE);
+	ClientSocket->Recv(Data.GetData(), Data.Num(), BytesRead);
+	if (this->IsPendingKillOrUnreachable()) { return; }
+
+	if (BytesRead > 0)
+	{
+		Data.SetNum(BytesRead);
+		UE_LOG(LogTemp, Warning, TEXT("Client: Bytes got: %d; Data: %d"), BytesRead, Data[0]);
+		auto TempRawSize = UVOIPStatics::GetMaxUncompressedVoiceDataSizePerChannel();
+		auto TempDecodeBuffer = TArray<uint8>();
+		TempDecodeBuffer.SetNumUninitialized(TempRawSize);
+		VoiceDecoder->Decode(Data.GetData(), Data.Num(), TempDecodeBuffer.GetData(), TempRawSize);
+		SoundWave->QueueAudio(TempDecodeBuffer.GetData(), TempRawSize);
+		NumOfBytes += BytesRead;
+	}
+}
+
+bool UVoiceComponent::IsCapturing()
+{
+	if (!VoiceCapture.IsValid()) { return false; }
+	return VoiceCapture->IsCapturing();
 }
