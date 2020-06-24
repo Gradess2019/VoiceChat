@@ -176,10 +176,6 @@ void UVoiceComponent::CaptureAndSendVoiceData_Implementation()
 
 		ReplicatedBuffer.Reset();
 	}
-
-	if (AudioComponent->IsPlaying()) { return; }
-
-	AudioComponent->Play();
 }
 
 void UVoiceComponent::CaptureVoice_Implementation()
